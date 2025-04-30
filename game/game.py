@@ -1,6 +1,7 @@
 from collections.abc import Iterator
 import tkinter as tk
 import torch as tch
+import numpy as np
 import random
 from PIL import Image, ImageTk
 
@@ -9,6 +10,42 @@ from game.ai import AIBase, AIFactory
 PIPE_IMG_BOTTOM = Image.open("./assets/Mario_pipe_long.png")
 PIPE_IMG_TOP = Image.open("./assets/Mario_pipe_long_top.png")
 BIRD_IMG = Image.open("./assets/bird.png")
+
+
+def pipe_image_top(width: int, height: int):
+    resize_height = int(PIPE_IMG_TOP.height * (width / PIPE_IMG_TOP.width))
+    image: Image.Image = PIPE_IMG_TOP.resize((width, resize_height))
+    image_array = tch.tensor(np.array(image), dtype=tch.uint8)
+    # print(image_array.dtype)
+    if height <= image_array.shape[0]:
+        diff = image_array.shape[0] - height
+        image_array = image_array[diff:]
+    else:
+        diff = height - image_array.shape[0]
+        lines = [image_array[10].unsqueeze(0) for _ in range(diff)] + [image_array]
+        image_array = tch.cat(lines, dim=0)
+
+    image = Image.fromarray(np.array(image_array))
+    return ImageTk.PhotoImage(image=image)
+
+
+def pipe_image_bottom(width: int, height: int):
+    resize_height = int(PIPE_IMG_BOTTOM.height * (width / PIPE_IMG_BOTTOM.width))
+    image: Image.Image = PIPE_IMG_BOTTOM.resize((width, resize_height))
+    image_array = tch.tensor(np.array(image), dtype=tch.uint8)
+    if height <= image_array.shape[0]:
+        image_array = image_array[:height]
+    else:
+        diff = height - image_array.shape[0]
+        lines = [image_array] + [image_array[-10].unsqueeze(0) for _ in range(diff)]
+        image_array = tch.cat(lines, dim=0)
+
+    image = Image.fromarray(np.array(image_array))
+    return ImageTk.PhotoImage(image=image)
+
+
+# pipe_image_top(40, 20)
+# (147, 40, 4)
 
 
 class Obstacle:
@@ -27,9 +64,21 @@ class Obstacle:
         self.y: float = y
         self.speed: float = speed
         self.canvas: tk.Canvas = canvas
-        self.id = self.canvas.create_rectangle(
-            self.x, self.y, self.x + self.width, self.y + self.height, fill="green"
-        )
+        # self.id = self.canvas.create_rectangle(
+        #     self.x, self.y, self.x + self.width, self.y + self.height, fill="green"
+        # )
+
+        if bottom:
+            self.photo: ImageTk.PhotoImage = pipe_image_bottom(
+                int(self.width), int(self.height)
+            )
+        else:
+            self.photo: ImageTk.PhotoImage = pipe_image_top(
+                int(self.width), int(self.height)
+            )
+
+        self.id = self.canvas.create_image(self.x, self.y, image=self.photo)
+
         # resize_height = int(PIPE_IMG_BOTTOM.height * (self.width / PIPE_IMG_BOTTOM.width))
         # if bottom:
         #     self.image: Image.Image = PIPE_IMG_BOTTOM.resize((self.width, resize_height))
@@ -217,9 +266,8 @@ class AIPlayerFactory:
 
     def generate(self, num: int) -> Iterator[AIPlayer]:
         self.iteration += 1
-        lr = 0.1
-        if self.iteration > 10:
-            lr = 0.01
+        lr = 0.1 / min(max(self.iteration, 1), 100)
+
         for ai in self.ai_factory.generate(num, lr):
             yield AIPlayer(self.canvas, ai, self.screen_w, self.screen_h, self.speed)
 
@@ -319,7 +367,7 @@ class Flappybird:
         if len(self.ai_players) == 0:
             self.ai_factory.ai_factory.best_ai = self.best_ai().ai
             self.death_ai_player = []
-            self.ai_players.extend(self.ai_factory.generate(50))
+            self.ai_players.extend(self.ai_factory.generate(20))
             self.random_obstacles()
 
     def game_loop(self):
