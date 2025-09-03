@@ -1,4 +1,5 @@
 from collections.abc import Iterator
+import math
 import tkinter as tk
 import torch as tch
 import numpy as np
@@ -64,7 +65,7 @@ class Obstacle:
         self.y: float = y
         self.speed: float = speed
         self.canvas: tk.Canvas = canvas
-        self.removed = False
+        self.removed: bool = False
         # self.id = self.canvas.create_rectangle(
         #     self.x, self.y, self.x + self.width, self.y + self.height, fill="green"
         # )
@@ -77,8 +78,9 @@ class Obstacle:
             self.photo: ImageTk.PhotoImage = pipe_image_top(
                 int(self.width), int(self.height)
             )
+        self.bottom: bool = bottom
 
-        self.id = self.canvas.create_image(self.x, self.y, image=self.photo)
+        self.id: int = self.canvas.create_image(self.x, self.y, image=self.photo)
 
         # resize_height = int(PIPE_IMG_BOTTOM.height * (self.width / PIPE_IMG_BOTTOM.width))
         # if bottom:
@@ -175,21 +177,10 @@ class Player:
         self.canvas.moveto(self.id, self.x, self.y)
 
     def gap(self, obstacle: Obstacle):
-        gap_x = (
-            min(
-                abs(self.x + self.width - obstacle.x),
-                abs(self.x - obstacle.x - obstacle.width),
-            )
-            / self.screen_w
-        )
-        gap_y = (
-            min(
-                abs(self.y + self.height - obstacle.y),
-                abs(self.y - obstacle.y - obstacle.height),
-            )
-            / self.screen_h
-        )
-        gap_ground = (self.screen_h -  self.y) / self.screen_h
+        # print(obstacle.x)
+        gap_x = (self.x - obstacle.x) / self.screen_w
+        gap_y = (self.y - obstacle.y) / self.screen_h
+        gap_ground = (self.screen_h - self.y) / self.screen_h
         return tch.tensor([gap_x, gap_y, gap_ground], dtype=tch.float32)
 
     def collise(self, obstacle: Obstacle):
@@ -245,7 +236,7 @@ class AIPlayer:
 
     def collises(self, obstacles: list[Obstacle]):
         return self.player.collises(obstacles) or (
-            self.player.y < 0 or self.player.y > self.player.screen_h
+            self.player.y - 5 < 0 or self.player.y + 5 > self.player.screen_h
         )
 
     def destroy(self):
@@ -265,10 +256,9 @@ class AIPlayerFactory:
         self.iteration: int = 0
 
     def generate(self, num: int) -> Iterator[AIPlayer]:
-        self.iteration += 1
-        lr = 0.1 / min(max(self.iteration, 1), 100)
-
-        for ai in self.ai_factory.generate(num, lr):
+        for ai in self.ai_factory.generate(
+            num, [0.1, 0.05, 0.01][round(random.random() * 2)]
+        ):
             yield AIPlayer(self.canvas, ai, self.screen_w, self.screen_h, self.speed)
 
 
@@ -292,7 +282,7 @@ class Flappybird:
         self.ai_factory: AIPlayerFactory = AIPlayerFactory(
             self.canvas, self.screen_w, self.screen_h, self.game_speed
         )
-        self.ai_players.extend(self.ai_factory.generate(10))
+        self.ai_players.extend(self.ai_factory.generate(20))
         self.obstacles: list[Obstacle] = []
         self.obstacles.extend(
             self.obstacles_factory.top_bottom(self.screen_w, self.screen_h / 2.0)
@@ -373,7 +363,10 @@ class Flappybird:
         for i in range(2, len(self.obstacles), 2):
             obstacle = self.obstacles[i]
             if obstacle.x > player.x:
-                if abs(obstacle.x - player.x) < abs(player.x - current_obstacle.x):
+                if (
+                    abs(obstacle.x - player.x) < abs(player.x - current_obstacle.x)
+                    and obstacle.bottom
+                ):
                     current_obstacle = obstacle
         return current_obstacle
 
@@ -407,7 +400,7 @@ class Flappybird:
         if len(self.ai_players) == 0:
             self.ai_factory.ai_factory.best_ai = self.best_ai().ai
             self.death_ai_player = []
-            self.ai_players.extend(self.ai_factory.generate(100))
+            self.ai_players.extend(self.ai_factory.generate(20))
             self.reset_game()
 
     def game_loop(self):

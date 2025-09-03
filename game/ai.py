@@ -13,12 +13,12 @@ class AIBase:
     b2: tch.Tensor
 
     def __init__(self) -> None:
-        self.w1 = tch.zeros((5, 3), dtype=tch.float32)
-        self.b1 = tch.zeros(5, dtype=tch.float32)
-        self.w2 = tch.zeros((2, 5), dtype=tch.float32)
+        self.w1 = tch.zeros((6, 3), dtype=tch.float32)
+        self.b1 = tch.zeros(6, dtype=tch.float32)
+        self.w2 = tch.zeros((2, 6), dtype=tch.float32)
         self.b2 = tch.zeros(2, dtype=tch.float32)
 
-    def save(self, filename = "ai.tch"):
+    def save(self, filename: str = "ai.tch"):
         tch.save(
             {
                 "w1": self.w1,
@@ -29,7 +29,7 @@ class AIBase:
             filename,
         )
 
-    def load(filename = "ai.tch"):
+    def load(filename: str = "ai.tch"):
         ai = AIBase()
         load_obj = tch.load(filename)
         ai.w1 = load_obj["w1"]
@@ -71,5 +71,5 @@ class AIFactory:
         current_gen = self.best_ai
         for _ in range(num):
             new_gen = current_gen.tweak(lr)
-            current_gen = new_gen
+            # current_gen = new_gen
             yield new_gen
