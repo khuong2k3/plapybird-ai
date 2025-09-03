@@ -3,7 +3,6 @@ from dataclasses import dataclass
 import io
 import torch as tch
 import torch.nn.functional as F
-from torch.serialization import FILE_LIKE
 
 
 @dataclass
@@ -14,12 +13,12 @@ class AIBase:
     b2: tch.Tensor
 
     def __init__(self) -> None:
-        self.w1 = tch.zeros((4, 3), dtype=tch.float32)
-        self.b1 = tch.zeros(4, dtype=tch.float32)
-        self.w2 = tch.zeros((2, 4), dtype=tch.float32)
+        self.w1 = tch.zeros((5, 3), dtype=tch.float32)
+        self.b1 = tch.zeros(5, dtype=tch.float32)
+        self.w2 = tch.zeros((2, 5), dtype=tch.float32)
         self.b2 = tch.zeros(2, dtype=tch.float32)
 
-    def save(self, filename: FILE_LIKE = "ai.tch"):
+    def save(self, filename = "ai.tch"):
         tch.save(
             {
                 "w1": self.w1,
@@ -30,7 +29,7 @@ class AIBase:
             filename,
         )
 
-    def load(filename: FILE_LIKE = "ai.tch"):
+    def load(filename = "ai.tch"):
         ai = AIBase()
         load_obj = tch.load(filename)
         ai.w1 = load_obj["w1"]

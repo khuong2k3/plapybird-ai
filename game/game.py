@@ -64,6 +64,7 @@ class Obstacle:
         self.y: float = y
         self.speed: float = speed
         self.canvas: tk.Canvas = canvas
+        self.removed = False
         # self.id = self.canvas.create_rectangle(
         #     self.x, self.y, self.x + self.width, self.y + self.height, fill="green"
         # )
@@ -102,6 +103,7 @@ class Obstacle:
         self.canvas.moveto(self.id, self.x, self.y)
 
     def destroy(self):
+        self.removed = True
         self.canvas.delete(self.id)
 
 
@@ -120,17 +122,15 @@ class ObstacleFactory:
         self.gap_height: float = gap_height
         self.game_speed: float = game_speed
 
-    def top(self, height: float):
-        return Obstacle(self.screen_w, 0, height, self.canvas, self.game_speed, False)
+    def top(self, x: float, height: float):
+        return Obstacle(x, 0, height, self.canvas, self.game_speed, False)
 
-    def bottom(self, height: float):
-        return Obstacle(
-            self.screen_w, self.screen_h - height, height, self.canvas, self.game_speed
-        )
+    def bottom(self, x: float, height: float):
+        return Obstacle(x, self.screen_h - height, height, self.canvas, self.game_speed)
 
-    def top_bottom(self, gap_y: float) -> Iterator[Obstacle]:
-        yield self.top(gap_y)
-        yield self.bottom(self.screen_h - gap_y - self.gap_height)
+    def top_bottom(self, x: float, gap_y: float) -> Iterator[Obstacle]:
+        yield self.top(x, gap_y)
+        yield self.bottom(x, self.screen_h - gap_y - self.gap_height)
 
 
 class Player:
@@ -189,7 +189,7 @@ class Player:
             )
             / self.screen_h
         )
-        gap_ground = self.y / self.screen_h
+        gap_ground = (self.screen_h -  self.y) / self.screen_h
         return tch.tensor([gap_x, gap_y, gap_ground], dtype=tch.float32)
 
     def collise(self, obstacle: Obstacle):
@@ -283,7 +283,7 @@ class Flappybird:
         )
         self._quit: bool = False
         self.canvas.pack()
-        self.player: Player = Player(self.canvas, self.screen_w, self.screen_h)
+        # self.player: Player = Player(self.canvas, self.screen_w, self.screen_h)
         self.obstacles_factory: ObstacleFactory = ObstacleFactory(
             self.canvas, self.screen_w, self.screen_h, 100
         )
@@ -294,12 +294,19 @@ class Flappybird:
         )
         self.ai_players.extend(self.ai_factory.generate(10))
         self.obstacles: list[Obstacle] = []
-        self.obstacles.extend(self.obstacles_factory.top_bottom(self.screen_h / 2.0))
+        self.obstacles.extend(
+            self.obstacles_factory.top_bottom(self.screen_w, self.screen_h / 2.0)
+        )
+        self.obstacles.extend(
+            self.obstacles_factory.top_bottom(
+                self.screen_w * (1.5), self.screen_h / 2.0
+            )
+        )
         self.root.bind("<space>", self.go_up)
         self.root.bind("q", self.quit)
 
     def set_game_speed(self, speed: float):
-        self.player.speed = speed
+        # self.player.speed = speed
         self.obstacles_factory.game_speed = speed
         for obstacle in self.obstacles:
             obstacle.speed = speed
@@ -308,10 +315,16 @@ class Flappybird:
         self._quit = True
 
     def go_up(self, _):
-        self.player.go_up()
+        return None
+        # self.player.go_up()
 
     def best_ai(self):
+        if len(self.death_ai_player) == 0:
+            self.ai_factory.ai_factory.best_ai.save()
+            return None
+
         current_best = self.death_ai_player[0]
+
         for player in self.death_ai_player[1:]:
             if player.lasted > current_best.lasted:
                 current_best = player
@@ -326,27 +339,54 @@ class Flappybird:
         current_best.ai.save()
         return current_best
 
-    def random_obstacles(self):
+    def reset_game(self):
         for obstacle in self.obstacles:
             obstacle.destroy()
-        self.obstacles = []
-        min_h = int(self.screen_h / 3.0)
+
+        self.obstacles: list[Obstacle] = []
+        self.obstacles.extend(
+            self.obstacles_factory.top_bottom(self.screen_w, self.screen_h / 2.0)
+        )
         self.obstacles.extend(
             self.obstacles_factory.top_bottom(
-                float(random.randint(min_h, int(self.screen_h) - min_h))
+                self.screen_w * (1.5), self.screen_h / 2.0
             )
         )
 
+    def random_obstacles(self):
+        for obstacle in self.obstacles:
+            if not obstacle.in_view():
+                obstacle.destroy()
+
+        self.obstacles = list(filter(lambda x: not x.removed, self.obstacles))
+        if len(self.obstacles) < 3:
+            min_h = int(self.screen_h / 3.0)
+            self.obstacles.extend(
+                self.obstacles_factory.top_bottom(
+                    self.screen_w,
+                    float(random.randint(min_h, int(self.screen_h) - min_h)),
+                )
+            )
+
+    def neasest_obstacle(self, player: Player):
+        current_obstacle = self.obstacles[0]
+        for i in range(2, len(self.obstacles), 2):
+            obstacle = self.obstacles[i]
+            if obstacle.x > player.x:
+                if abs(obstacle.x - player.x) < abs(player.x - current_obstacle.x):
+                    current_obstacle = obstacle
+        return current_obstacle
+
     def update(self):
-        if not self.obstacles[0].in_view():
-            self.random_obstacles()
+        self.random_obstacles()
 
         for obstacle in self.obstacles:
             obstacle.update()
             obstacle.draw()
 
+        check_obstacle = self.neasest_obstacle(self.ai_players[0].player)
         for ai in self.ai_players:
-            gap_tensor = ai.player.gap(self.obstacles[0])
+            gap_tensor = ai.player.gap(check_obstacle)
             ai.moving(gap_tensor)
             ai.gap_tensor = gap_tensor
             ai.update()
@@ -367,14 +407,15 @@ class Flappybird:
         if len(self.ai_players) == 0:
             self.ai_factory.ai_factory.best_ai = self.best_ai().ai
             self.death_ai_player = []
-            self.ai_players.extend(self.ai_factory.generate(20))
-            self.random_obstacles()
+            self.ai_players.extend(self.ai_factory.generate(100))
+            self.reset_game()
 
     def game_loop(self):
         if not self._quit:
             self.update()
             self.root.after(50, self.game_loop)
         else:
+            _ = self.best_ai()
             self.root.quit()
 
     def start(self):
